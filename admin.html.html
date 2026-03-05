@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Sublimé Studio | Admin</title>
+    <link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        :root { --p: #ffb7b2; --s: #d4e1f5; --bg: #f8f9fc; }
+        body { font-family: 'Quicksand', sans-serif; background: var(--bg); margin: 0; display: flex; }
+        .sidebar { width: 280px; background: white; height: 100vh; padding: 40px 20px; box-shadow: 2px 0 10px rgba(0,0,0,0.02); position: sticky; top:0; }
+        .nav-btn { width: 100%; padding: 15px; border: none; background: none; text-align: left; cursor: pointer; border-radius: 12px; margin-bottom: 10px; font-weight: bold; color: #888; }
+        .nav-btn.active { background: var(--p); color: white; }
+        .main { flex: 1; padding: 50px; }
+        .card { background: white; padding: 30px; border-radius: 20px; box-shadow: 0 5px 20px rgba(0,0,0,0.02); margin-bottom: 20px; }
+        input, select, textarea { width: 100%; padding: 12px; margin-bottom: 15px; border-radius: 10px; border: 1px solid #eee; font-family: inherit; }
+        .btn-act { background: var(--s); border: none; padding: 15px; border-radius: 10px; font-weight: bold; cursor: pointer; width: 100%; color: #5a7fb2; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 15px; text-align: left; border-bottom: 1px solid #eee; }
+        .photo-strip { display: flex; gap: 10px; overflow-x: auto; padding: 10px; background: #f9f9f9; border-radius: 10px; }
+        .photo-item { text-align: center; flex-shrink: 0; }
+    </style>
+</head>
+<body>
+    <div class="sidebar">
+        <h2 style="letter-spacing:4px; text-align:center;">ADMIN</h2>
+        <button class="nav-btn active" onclick="tab('subir')"><i class="fas fa-plus"></i> Nueva Prenda</button>
+        <button class="nav-btn" onclick="tab('inventario')"><i class="fas fa-box"></i> Inventario</button>
+        <button class="nav-btn" onclick="tab('secciones')"><i class="fas fa-folder"></i> Secciones</button>
+    </div>
+
+    <div class="main">
+        <div id="subir" class="card">
+            <h2>Subir Producto</h2>
+            <input type="text" id="n" placeholder="Nombre">
+            <input type="number" id="pr" placeholder="Precio ($)">
+            <textarea id="d" placeholder="Descripción"></textarea>
+            <div style="display:flex; gap:10px;"><input type="text" id="sz" placeholder="Tallas (S,M,L)"><input type="text" id="cl" placeholder="Colores"></div>
+            <select id="c"></select>
+            <input type="file" id="f" multiple>
+            <button class="btn-act" onclick="up()">Publicar en Sublimé</button>
+        </div>
+
+        <div id="inventario" class="card" style="display:none;">
+            <h2>Inventario</h2>
+            <table>
+                <thead><tr><th>Producto</th><th>Estado</th><th>Acciones</th></tr></thead>
+                <tbody id="it"></tbody>
+            </table>
+        </div>
+
+        <div id="secciones" class="card" style="display:none;">
+            <h2>Secciones</h2>
+            <div style="display:flex; gap:10px;"><input type="text" id="nc" placeholder="Nueva sección"><button onclick="addC()" style="padding:10px 20px;">Añadir</button></div>
+            <div id="clist" style="margin-top:20px;"></div>
+        </div>
+    </div>
+
+    <div id="p-mod" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); z-index:3000; align-items:center; justify-content:center;">
+        <div class="card" style="max-width:600px; width:90%;">
+            <h3>🔄 Ordenar Galería</h3>
+            <div id="plist" class="photo-strip"></div>
+            <button class="btn-act" style="margin-top:20px;" onclick="saveO()">Guardar Nuevo Orden</button>
+            <button onclick="closeP()" style="width:100%; background:none; border:none; margin-top:10px; cursor:pointer;">Cerrar</button>
+        </div>
+    </div>
+
+    <script>
+        const API = "http://localhost:5000/api";
+        let config = { categories: [] }, curP = null, curImgs = [];
+
+        function tab(t){ 
+            document.querySelectorAll('.card').forEach(c => c.style.display = 'none'); 
+            document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+            document.getElementById(t).style.display = 'block'; event.target.classList.add('active');
+            if(t=='inventario') loadInv(); if(t=='secciones' || t=='subir') loadC();
+        }
+
+        async function loadC() {
+            const r = await fetch(`${API}/config`); config = await r.json();
+            document.getElementById('c').innerHTML = config.categories.map(c => `<option>${c}</option>`).join('');
+            document.getElementById('clist').innerHTML = config.categories.map(c => `<div style="display:flex; justify-content:space-between; padding:10px; border-bottom:1px solid #eee;">${c} <button onclick="delC('${c}')" style="color:red; border:none; background:none; cursor:pointer;">&times;</button></div>`).join('');
+        }
+
+        async function addC() {
+            const v = document.getElementById('nc').value; if(!v) return;
+            config.categories.push(v); await fetch(`${API}/config`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(config) });
+            document.getElementById('nc').value = ''; loadC();
+        }
+
+        async function delC(n) { if(confirm('¿Borrar sección?')) { config.categories = config.categories.filter(c => c!==n); await fetch(`${API}/config`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(config) }); loadC(); } }
+
+        async function up() {
+            const fd = new FormData();
+            const data = { id:Date.now(), name:document.getElementById('n').value, price:document.getElementById('pr').value, desc:document.getElementById('d').value, sizes:document.getElementById('sz').value.split(','), colors:document.getElementById('cl').value.split(','), category:document.getElementById('c').value, status:'activo' };
+            for(const file of document.getElementById('f').files) fd.append('photos', file);
+            fd.append('data', JSON.stringify(data));
+            await fetch(`${API}/upload`, { method:'POST', body:fd }); alert("¡Subido!"); location.reload();
+        }
+
+        async function loadInv() {
+            const r = await fetch(`${API}/products`); const ps = await r.json();
+            document.getElementById('it').innerHTML = ps.map(p => `<tr><td>${p.name}</td><td>${p.status}</td><td>
+                <button onclick="openP(${p.id})"><i class="fas fa-images"></i></button>
+                <button onclick="st(${p.id})"><i class="fas fa-power-off"></i></button>
+                <button onclick="delP(${p.id})" style="color:red"><i class="fas fa-trash"></i></button></td></tr>`).join('');
+        }
+
+        async function openP(id) {
+            const r = await fetch(`${API}/products`); const ps = await r.json();
+            const p = ps.find(x => x.id == id); curP = id; curImgs = p.images;
+            renderO(); document.getElementById('p-mod').style.display='flex';
+        }
+        function renderO() {
+            document.getElementById('plist').innerHTML = curImgs.map((img, i) => `<div class="photo-item"><img src="http://localhost:5000/${img}" style="width:80px; height:80px; object-fit:cover; border-radius:10px;"><br>
+                <button onclick="mov(${i},-1)">◀</button><button onclick="mov(${i},1)">▶</button></div>`).join('');
+        }
+        function mov(i, d) { let ni = i+d; if(ni<0 || ni>=curImgs.length) return; [curImgs[i], curImgs[ni]] = [curImgs[ni], curImgs[i]]; renderO(); }
+        async function saveO() { await fetch(`${API}/reorder`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({id:curP, images:curImgs}) }); alert("Ordenado!"); closeP(); }
+        function closeP() { document.getElementById('p-mod').style.display='none'; }
+        async function st(id){ await fetch(`${API}/toggle`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({id}) }); loadInv(); }
+        async function delP(id){ if(confirm('¿Borrar?')){ await fetch(`${API}/delete`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({id}) }); loadInv(); } }
+        
+        window.onload = loadC;
+    </script>
+</body>
+</html>
